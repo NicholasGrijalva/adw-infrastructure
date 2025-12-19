@@ -1,0 +1,37 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Python tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# ADW runtime directories
+agents/
+logs/
+trees/
+.ports.env
+
+# Lock files (regenerate locally)
+uv.lock
+
+# Node (if using webhook frontend)
+node_modules/
