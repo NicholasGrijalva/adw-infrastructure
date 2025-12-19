@@ -40,7 +40,14 @@ uv sync
    cp .env.example .env
    ```
 
-2. Set your `ANTHROPIC_API_KEY` in `.env`
+2. Authenticate Claude Code (choose one):
+   ```bash
+   # Option A: Claude Max subscription (recommended - no API key needed)
+   claude login
+
+   # Option B: Direct API key (set in .env)
+   # ANTHROPIC_API_KEY=your_key_here
+   ```
 
 3. Ensure `gh` is authenticated:
    ```bash
