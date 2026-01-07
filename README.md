@@ -171,19 +171,12 @@ cp adw-template/.env.example your-project/
 cp .env.example .env
 ```
 
-### 2. Authentication (Choose One)
+### 2. Claude Authentication
 
-**Option A: Claude Max Subscription (Recommended)**
 ```bash
 claude login
 # Uses OAuth tokens from ~/.claude/.credentials.json
-# No API key needed
-```
-
-**Option B: Direct API Key**
-```bash
-# In .env:
-ANTHROPIC_API_KEY=sk-ant-...
+# Works with Claude Max subscription - no API key needed
 ```
 
 ### 3. GitHub CLI
@@ -198,6 +191,240 @@ gh auth login
 ```bash
 uv run adws/health_check.py
 ```
+
+---
+
+## Webhook Setup (GitHub Integration)
+
+This section walks you through setting up automatic ADW triggering via GitHub webhooks. When complete, creating an issue or commenting `adw_plan_build_iso` will automatically start workflows.
+
+### Architecture Overview
+
+```
+GitHub Issue Created
+        |
+        v
+GitHub Webhook POST --> Cloudflare Tunnel --> Local Webhook Server (port 8001)
+                                                      |
+                                                      v
+                                              ADW Workflow Spawned
+```
+
+### Step 1: Install Cloudflared
+
+Cloudflared creates a secure tunnel from Cloudflare's edge to your local server without opening firewall ports.
+
+**macOS (Homebrew):**
+```bash
+brew install cloudflared
+```
+
+**Linux (Debian/Ubuntu):**
+```bash
+# Download latest release
+curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+chmod +x cloudflared
+sudo mv cloudflared /usr/local/bin/
+```
+
+**Windows:**
+```powershell
+# Download from: https://github.com/cloudflare/cloudflared/releases
+# Or use winget:
+winget install Cloudflare.cloudflared
+```
+
+Verify installation:
+```bash
+cloudflared --version
+```
+
+### Step 2: Create a Cloudflare Tunnel
+
+1. **Log in to Cloudflare Zero Trust Dashboard**
+   - Go to: https://one.dash.cloudflare.com
+   - Sign up for free if you don't have an account
+
+2. **Create a Tunnel**
+   - Navigate to: **Networks** > **Tunnels**
+   - Click **Create a tunnel**
+   - Select **Cloudflared** as connector type
+   - Name your tunnel (e.g., `adw-webhook`)
+   - Click **Save tunnel**
+
+3. **Copy the Tunnel Token**
+   - After creating, you'll see an install command like:
+     ```
+     cloudflared service install eyJhIjoiNjM...
+     ```
+   - Copy the token (the long string after `install`)
+   - Add to your `.env` file:
+     ```bash
+     CLOUDFLARED_TUNNEL_TOKEN=eyJhIjoiNjM...
+     ```
+
+4. **Configure Public Hostname**
+   - In the tunnel config, click **Public Hostname**
+   - Add a hostname:
+     - **Subdomain**: `adw-webhook` (or your choice)
+     - **Domain**: Select your Cloudflare domain
+     - **Service Type**: `HTTP`
+     - **URL**: `localhost:8001`
+   - Save the configuration
+   - Note your full URL: `https://adw-webhook.yourdomain.com`
+
+### Step 3: Configure GitHub Webhook
+
+1. **Go to Repository Settings**
+   - Navigate to your GitHub repo
+   - Click **Settings** > **Webhooks** > **Add webhook**
+
+2. **Configure Webhook**
+   - **Payload URL**: `https://adw-webhook.yourdomain.com/gh-webhook`
+   - **Content type**: `application/json`
+   - **Secret**: Leave empty (or add for production security)
+   - **SSL verification**: Enable
+
+3. **Select Events**
+   - Choose **Let me select individual events**
+   - Check:
+     - **Issues** (for new issue triggers)
+     - **Issue comments** (for `adw_*` comment triggers)
+     - **Pull requests** (for auto-closing linked issues on merge)
+   - Click **Add webhook**
+
+### Step 4: Start the Services
+
+**Terminal 1 - Start Webhook Server:**
+```bash
+uv run adws/adw_triggers/trigger_webhook.py
+```
+
+You should see:
+```
+Starting ADW Webhook Trigger on port 8001
+Starting server on http://0.0.0.0:8001
+Webhook endpoint: POST /gh-webhook
+Health check: GET /health
+```
+
+**Terminal 2 - Start Cloudflare Tunnel:**
+```bash
+./scripts/expose_webhook.sh
+```
+
+Or manually:
+```bash
+cloudflared tunnel run --token $CLOUDFLARED_TUNNEL_TOKEN
+```
+
+### Step 5: Test the Integration
+
+1. **Verify Health Check:**
+   ```bash
+   curl https://adw-webhook.yourdomain.com/health
+   ```
+   Should return: `{"status": "healthy", ...}`
+
+2. **Test with a GitHub Issue:**
+   - Create a new issue with body containing: `adw_plan_build_iso`
+   - Or comment `adw_plan_build_iso` on any issue
+   - ADW should post a comment confirming workflow started
+
+### Webhook Events Reference
+
+| GitHub Event | Action | ADW Behavior |
+|--------------|--------|--------------|
+| `issues` | `opened` | Triggers workflow if body contains `adw_*` |
+| `issue_comment` | `created` | Triggers workflow if comment contains `adw_*` |
+| `pull_request` | `closed` (merged) | Auto-closes linked issues (`Closes #123`) |
+
+### Triggering Workflows via Comments
+
+Comment on any issue to trigger a specific workflow:
+
+```
+adw_plan_build_iso          # Plan + Build
+adw_plan_build_test_iso     # Plan + Build + Test
+adw_sdlc_iso                # Full SDLC pipeline
+adw_sdlc_zte_iso            # Zero Touch Execution (auto-merge)
+```
+
+With existing ADW ID (for dependent workflows):
+```
+adw_build_iso abc12345      # Continue build in existing worktree
+adw_test_iso abc12345       # Run tests in existing worktree
+adw_review_iso abc12345     # Review in existing worktree
+```
+
+### Running as a Background Service (Optional)
+
+**Using systemd (Linux):**
+
+Create `/etc/systemd/system/adw-webhook.service`:
+```ini
+[Unit]
+Description=ADW Webhook Server
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/your/project
+ExecStart=/usr/local/bin/uv run adws/adw_triggers/trigger_webhook.py
+Restart=always
+Environment=PATH=/usr/local/bin:/usr/bin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable adw-webhook
+sudo systemctl start adw-webhook
+```
+
+**Using launchd (macOS):**
+
+Create `~/Library/LaunchAgents/com.adw.webhook.plist`:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.adw.webhook</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/uv</string>
+        <string>run</string>
+        <string>adws/adw_triggers/trigger_webhook.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/your/project</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.adw.webhook.plist
+```
+
+### Alternative: Cron Polling (No Webhook Required)
+
+If you can't set up webhooks, use the polling trigger instead:
+
+```bash
+uv run adws/adw_triggers/trigger_cron.py
+```
+
+This polls GitHub every 20 seconds for:
+- New issues without ADW comments
+- Comments containing `adw_*` triggers
 
 ---
 
