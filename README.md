@@ -561,6 +561,152 @@ Workflow state tracked in `agents/{adw_id}/adw_state.json`:
 | `/cleanup_worktrees` | Remove stale worktrees |
 | `/health_check` | Validate system setup |
 | `/track_agentic_kpis` | Update performance metrics |
+| `/git-status` | View open PRs, issues, and ADW status |
+| `/planning/prd-to-issues` | Convert PRD to GitHub issues by epic |
+| `/create_parallel_branch` | Create long-lived parallel branch with worktree |
+
+---
+
+## Planning & Parallel Branch Workflow
+
+ADW supports a powerful workflow for converting PRDs into GitHub issues and working on parallel branches.
+
+### Overview
+
+```
+1. Create PRD Document
+        |
+        v
+2. /prd-to-issues --> Creates analysis doc + GitHub issues
+        |
+        v
+3. /create_parallel_branch --> Creates long-lived branch (e.g., prd-12)
+        |
+        v
+4. /git-status --> Shows open issues, pick one
+        |
+        v
+5. Comment "adw_sdlc_iso" --> ADW creates worktree off parallel branch
+        |
+        v
+6. ADW completes --> PR merges to parallel branch (not main)
+```
+
+### Step 1: Write Your PRD
+
+Create a PRD document in `specs/architecture/`:
+
+```markdown
+# PRD: My Feature
+
+## Overview
+...
+
+## Requirements
+### Phase 1: Foundation
+- Requirement 1.1
+- Requirement 1.2
+
+### Phase 2: Core Implementation
+...
+```
+
+### Step 2: Convert PRD to GitHub Issues
+
+Run the `/prd-to-issues` command:
+
+```
+/prd-to-issues specs/architecture/PRD_my_feature.md MY-FEATURE
+```
+
+This will:
+1. Analyze the PRD and explore the codebase for gaps
+2. Create an implementation analysis document
+3. Present a summary of issues to create
+4. After confirmation, create GitHub issues organized by epic/phase
+5. Apply labels like `MY-FEATURE`, `phase-1`, `backend`, etc.
+
+### Step 3: Create a Parallel Branch
+
+For large features spanning multiple issues, create a long-lived parallel branch:
+
+```
+/create_parallel_branch main prd-12
+```
+
+This creates:
+- **Branch**: `prd-12` (branched from `main`)
+- **Worktree**: `/Users/<you>/Downloads/prd-12`
+- **Label**: `target:prd-12` (for ADW routing)
+- **Ports**: Auto-calculated (e.g., 9115/9215)
+
+### Step 4: Check Status
+
+Use `/git-status` to see what's ready to work on:
+
+```
+/git-status
+```
+
+This shows:
+- Open PRs and their ADW status
+- Open issues categorized by type
+- Active ADW agents
+- Which issues are blocked vs ready
+
+### Step 5: Trigger ADW on an Issue
+
+Comment on any issue to start ADW:
+
+```
+adw_sdlc_iso
+```
+
+If the issue has a `target:prd-12` label, ADW will:
+1. Create a worktree branched from `prd-12` (not main)
+2. Implement the issue
+3. Create a PR targeting `prd-12` (not main)
+
+### Branch Hierarchy
+
+```
+main
+ ├── prd-12 (long-lived parallel branch)
+ │    ├── feature-issue-101-adw-abc12345-... (ADW worktree)
+ │    ├── feature-issue-102-adw-def67890-... (ADW worktree)
+ │    └── ... (merges back to prd-12)
+ │
+ ├── prd-13 (another parallel branch)
+ │    └── ...
+ │
+ └── feature-issue-99-adw-xyz11111-... (direct ADW work on main)
+```
+
+### Merging Parallel Branches
+
+When all issues in a parallel branch are complete:
+
+1. Create a PR from `prd-12` to `main`
+2. Review the combined work
+3. Squash merge to main
+4. Delete the parallel branch and worktree
+
+### Commands Reference
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `/git-status` | View open PRs/issues | `/git-status` or `/git-status 121` |
+| `/prd-to-issues` | Convert PRD to issues | `/prd-to-issues specs/PRD.md PREFIX` |
+| `/create_parallel_branch` | Create parallel branch | `/create_parallel_branch main prd-12` |
+
+### Labels for Routing
+
+| Label | Purpose |
+|-------|---------|
+| `target:prd-12` | ADW branches from/merges to `prd-12` |
+| `target:main` | Default - ADW uses main (implicit) |
+| `phase-1`, `phase-2` | Sprint/phase organization |
+| `PRD-v5`, `AUTH` | Epic/project grouping |
 
 ---
 
