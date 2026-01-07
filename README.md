@@ -114,7 +114,7 @@ your-project/
 
 ```bash
 # Clone the ADW template
-git clone https://github.com/santicognos/CM_Learning01.git my-project
+git clone https://github.com/NicholasGrijalva/adw-infrastructure.git my-project
 cd my-project
 
 # Install dependencies
@@ -130,7 +130,7 @@ gh auth login # Authenticate GitHub CLI
 
 ```bash
 # Add ADW as a remote
-git remote add adw-template https://github.com/santicognos/CM_Learning01.git
+git remote add adw-template https://github.com/NicholasGrijalva/adw-infrastructure.git
 git fetch adw-template main
 
 # Merge ADW files (creates adws/, .claude/, scripts/)
